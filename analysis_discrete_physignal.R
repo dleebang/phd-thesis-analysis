@@ -1,12 +1,75 @@
 #Phylogenetic signal - calculate for the entire discrete dataset?
 #Phylogenetic signal - calculate for each discrete variable
 
-#select disc. variables
-data_physig <- data %>% 
-  select(structure, emission_pattern, note_types)
+#phylo.sig.disc function (Maddison & Slatkin p value)
+source("Func.phylo.signal.disc.txt")
 
-#z-scale data
-data_physig <- scale(data_physig)
+#delta statistics from Borges et al. 2019
+source("delta_statistics.R")
+
+# get ultra.tree
+write.tree(ultra.tree, 'bok_ultra.tre')
+ultra.tree <- ape::read.tree('bok_ultra.tre')
+
+
+#### ANATOMY
+#select disc. anatomic variables
+data_physig <- data %>% 
+  select(base_da_aritenoide, apice_da_aritenoide) %>% 
+  mutate(base_da_aritenoide  = case_when(data$base_da_aritenoide == "espesso" ~ 0,
+                   data$base_da_aritenoide == "espesso medio" ~ 1,
+                   data$base_da_aritenoide == "espesso com proeminencia" ~ 2)) %>% 
+  mutate(apice_da_aritenoide = case_when(data$apice_da_aritenoide == "estreito" ~ 0,
+                                         data$apice_da_aritenoide == "medio" ~ 1,
+                                         data$apice_da_aritenoide == "ampla" ~ 2))
+
+
+#build a treedata object and extract data with species names for each variable
+data_physig <- treedata(ultra.tree, data_physig) %>% .$data
+
+
+#### Maddison & Slatkin
+#run function for all discrete traits
+results <- apply(data_physig, 2, phylo.signal.disc, ultra.tree, rep = 500)
+
+
+#create a matrix to hold results
+phylosignal_madslat <- matrix(ncol = 1, nrow = length(results), 
+                              dimnames = list(trait = names(results), "P.value"))
+
+
+#extract p values from results
+for (i in names(results)) {
+  phylosignal_madslat[i,] <- results[[i]]$.Randomization.Results["P.value",]
+}
+
+phylosignal_madslat
+
+#### Delta statistic
+#calculate delta and p-values
+random_delta <- rep(NA,500)
+phylosignal_delta <- apply(data_physig, 2, function(trait) {
+  delta_trait <- delta(trait,ultra.tree,0.1,0.5,10000,10,100)
+  for (i in 1:length(random_delta)){
+    rtrait <- sample(trait)
+    random_delta[i] <- delta(rtrait,ultra.tree,0.1,0.5,10000,10,100)
+  }
+  data.frame(delta_value = delta_trait, 
+             p_value = sum(random_delta>delta_trait)/length(random_delta))
+})
+
+phylosignal_delta
+
+
+
+
+
+#### ACOUSTIC
+#select disc. acoustic variables
+data_physig <- data %>% 
+  select(structure, emission_pattern, note_types) %>% 
+  scale()
+
 
 #build a treedata object and extract data with species names for each variable
 data_physig <- treedata(ultra.tree, data_physig) %>% .$data
@@ -26,9 +89,8 @@ data_physig <- treedata(ultra.tree, data_physig) %>% .$data
 #   2 = two facultative
 
 
-#phylo.sig.disc function 
-source("Func.phylo.signal.disc.txt")
 
+#### Maddison & Slatkin
 #run function for all discrete traits
 results <- apply(data_physig, 2, phylo.signal.disc, ultra.tree, rep = 500)
 
@@ -47,10 +109,9 @@ phylosignal_madslat
 
 
 
-#delta statistics from Borges et al. 2019
-source("delta_statistics.R")
 
 
+#### Delta statistic
 #calculate delta and p-values
 random_delta <- rep(NA,500)
 phylosignal_delta <- apply(data_physig, 2, function(trait) {
